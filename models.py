@@ -34,9 +34,9 @@ clf_dict = {
 
 def model_choice(clf, xtrain=None, ytrain=None, scaling=True):
     param_grid_nn = {
-        "mlp__alpha": [0.01, 0.05, 0.1],
+        "mlp__alpha": [0.05, 0.1],
         "mlp__learning_rate": ["constant", "adaptive"],
-        'mlp__hidden_layer_sizes': [(8, 2), (12, 3), (16, 4)] 
+        'mlp__hidden_layer_sizes': [(8, 2)] 
     }
     param_grid_knn = {
         "knn__n_neighbors": [3, 5, 7]
@@ -61,6 +61,7 @@ def model_choice(clf, xtrain=None, ytrain=None, scaling=True):
         with warnings.catch_warnings(): 
             warnings.filterwarnings("ignore",category=ConvergenceWarning) 
             grid_search.fit(xtrain, ytrain)
+
         # final model
         model.steps.append(("KNN", KNeighborsClassifier(grid_search.best_params_["knn__n_neighbors"])))
     elif clf == "NN":
@@ -82,6 +83,7 @@ def model_choice(clf, xtrain=None, ytrain=None, scaling=True):
         print("running model search")
         grid_search = GridSearchCV(temp_model, param_grid_nn, n_jobs=-1, cv=5)
         grid_search.fit(xtrain, ytrain)
+        print(grid_search.best_params_)
         model.steps.append(("mlp", MLPClassifier(
                         solver="sgd",
                         hidden_layer_sizes=grid_search.best_params_["mlp__hidden_layer_sizes"],
@@ -90,6 +92,7 @@ def model_choice(clf, xtrain=None, ytrain=None, scaling=True):
                         alpha=grid_search.best_params_["mlp__alpha"],
                         learning_rate=grid_search.best_params_["mlp__learning_rate"],
                     )))
+        
     else:
         model.steps.append(("clf", clf_dict[clf]()))
     return model
