@@ -25,9 +25,11 @@ subgroups_dict = {"white-male": [0, 1, 0, 0, 1],
                   "asia-female": [1, 0, 0, 1, 0]}
 
 
-def run_y_shift(dataset, target_group, num_runs, alpha): 
-    
-    group=subgroup_dict[target_group]
+def run_y_shift(target_group, num_runs, alpha): 
+    adult = ds.Dataset('income', one_hot=True, remove_sensitive=False, exclude_sensitive=exclude_attr_list)
+    dataset = adult
+    results = pd.DataFrame() 
+    group=subgroups_dict[target_group]
     target = 0
     for i in range(num_runs): 
         for noise_rate in [0, 0.1, 0.2, 0.5, 0.7]: 
@@ -44,30 +46,34 @@ def run_y_shift(dataset, target_group, num_runs, alpha):
             
             
             
-    results.to_csv(f"results/shift/adult_label_shift_hot{target}{1-target}_g{target_group}_postprocess.csv")
+    results.to_csv(f"results/adult_label_shift_hot{target}{1-target}_g{target_group}_postprocess.csv")
     
 
-def run_poison_addition(dataset, modify_group, target_group, num_runs, alpha): 
-    # groups are now string and not vectors 
-    km = cluster.KMeans(n_clusters=100)
-    km.fit(dataset.x_valid)
-    train_km = km.predict(dataset.x_train)
+def run_poison_addition(modify_group, target_group, num_runs, alpha): 
     
-    cl_inds, cl_cts = np.unique(km.labels_, return_counts=True)
-
-    # translate group str
-    md_group = subgroups_dict[modify_group]
-    tgt_group = subgroups_dict[target_group]
-    
-
-
+    results = pd.DataFrame() 
     for n in range(num_runs):
+        adult = ds.Dataset('income', one_hot=True, remove_sensitive=False, exclude_sensitive=exclude_attr_list)
+        dataset = adult
+    
+        # groups are now string and not vectors 
+        km = cluster.KMeans(n_clusters=100)
+        km.fit(dataset.x_valid)
+        train_km = km.predict(dataset.x_train)
+        
+        cl_inds, cl_cts = np.unique(km.labels_, return_counts=True)
+
+        # translate group str
+        md_group = subgroups_dict[modify_group]
+        tgt_group = subgroups_dict[target_group]
+    
         # first check clean performance
-        results = mt.train_postprocess_test_onehot(dataset=adult, 
+        clean_results = mt.train_postprocess_test_onehot(dataset=adult, 
                                                 noise_rate=0, 
                                                 run=n, 
                                                 alpha=alpha, 
                                                 max_T = 30)
+        results = pd.concat((results, clean_results), axis=0)
         
         for eps in [2, 4, 8, 16]: 
             x_poison = []
@@ -130,7 +136,7 @@ def run_poison_addition(dataset, modify_group, target_group, num_runs, alpha):
             
             results = pd.concat((results, poison_results), axis=0)
         
-            results.to_csv(f"results/shift/adult_addition_attack_t{target_group}_m{modify_group}.csv")
+            results.to_csv(f"results/adult_addition_attack_t{target_group}_m{modify_group}.csv")
     
 if __name__ == "__main__": 
     # parse command line arguments
@@ -149,12 +155,8 @@ if __name__ == "__main__":
     # Parse the arguments
     args = parser.parse_args()
     
-    adult = ds.Dataset('income', one_hot=True, remove_sensitive=False, exclude_sensitive=exclude_attr_list)
-    dataset = adult
-    results = pd.DataFrame()
-    
     if args.shift: 
-        run_y_shift(dataset, args.modify, args.num_runs, args.alpha)
+        run_y_shift(args.modify, args.num_runs, args.alpha)
         
     if args.addition:
-        run_poison_addition(dataset, args.modify, args.target, args.num_runs, args.alpha)
+        run_poison_addition(args.modify, args.target, args.num_runs, args.alpha)
