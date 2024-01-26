@@ -206,16 +206,77 @@ ACSPublicCoverage_categories = {
 
 ACSEmployment_categories = {
         # 'RELP',
-        # 'DIS',
-        # 'ESP',
-        # 'CIT',
-        # 'MIG',
-        # 'MIL',
-        # 'ANC',
-        # 'NATIVITY',
-        # 'DEAR',
-        # 'DEYE',
-        # 'DREM',
+        ## 'DIS',
+        ## 'ESP',
+        ## 'CIT',
+        ## 'MIG',
+        ## 'MIL',
+        ## 'ANC',
+        ## 'NATIVITY',
+        ## 'DEAR',
+        ## 'DEYE',
+        ## 'DREM',
+    #disability
+    "DIS": {1.0: "With a disability", 2.0: "No disability"},
+    # Employment status of parents
+    "ESP":{
+        0.0: "(not own child of householder, and not child in subfamily)",
+        1.0: "Living with two parents: Both parents in labor force",
+        2.0: "Living with two parents: Father only in labor force",
+        3.0: "Living with two parents: Mother only in labor force",
+        4.0: "Living with two parents: Neither parent in labor force",
+        5.0: "Living with father: In labor force",
+        6.0: "Living with father: Not in labor force",
+        7.0: "Living with mother: In labor force",
+        8.0: "Living with mother: Not in labor force",
+    },
+    # citizenship status
+    "CIT":{
+        1.0: "Born in the United States",
+        2.0: "Born in Puerto Rico, Guam, the U.S. Virgin Islands, or Northern Marianas",
+        3.0: "Born abroad of U.S. citizen parent or parents",
+        4.0: "U.S. citizen by naturalization",
+        5.0: "Not a U.S. citizen",
+    },
+    #Mobility status (lived here 1 year ago)
+    "MIG":{
+        1.0: "Yes, same house (nonmovers)",
+        2.0: "No, outside US and Puerto Rico",
+        3.0: "No, different house in US or Puerto Rico",
+    },
+    # Military service
+
+    "MIL":{
+        0.0: "N/A (less than 17 years old)",
+        1.0: "Now on active duty",
+        2.0: "On active duty in the past, but not now",
+        3.0: "Only on active duty for training in Reserves/National Guard",
+        4.0: "Never served in the military",
+    },
+    # Ancestry Recode: 
+    "ANC":{
+        1.0: "Single",
+        2.0: "Multiple",
+        3.0: "Unclassified",
+        4.0: "Not reported",
+    },
+    # nativity
+    "NATIVITY":{
+        1.0: "Native",
+        2.0: "Foreign born",
+    },
+    # Hearing Difficulty
+    "DEAR":{
+        1.0: "Yes",
+        2.0: "No",
+    },
+    # Vision Difficulty
+    "DEYE":{"Yes": 1.0, "No": 2.0},
+    # Cognitive difficulty
+    "DREM":{0.0: "N/A (less than 5 years old)",
+        1.0: "Yes",
+        2.0: "No",
+    },
     "SCHL": {
         1.0: "No schooling completed",
         2.0: "Nursery school, preschool",

@@ -75,7 +75,7 @@ def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha):
                                                 max_T = 30)
         results = pd.concat((results, clean_results), axis=0)
         
-        for eps in [2, 4, 8, 16]: 
+        for eps in [1, 2, 4, 8]: 
             x_poison = []
             y_poison = []
             g_poison = []

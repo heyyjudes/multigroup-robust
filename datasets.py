@@ -8,41 +8,48 @@ import acs
 
 class Dataset:
     def __init__(self, dataset_name, 
-                 one_hot=False, remove_sensitive=True, 
-                 exclude_sensitive=None) -> None:
+                one_hot=False, remove_sensitive=True, 
+                exclude_sensitive=None) -> None:
         self.dataset_name = dataset_name
         self.one_hot = one_hot
         self.x_labels = None 
         self.s_labels = None
+        self.acs_dict = {'income': (ACSIncome, acs.ACSIncome_categories),
+                        'employment': (ACSEmployment, acs.ACSEmployment_categories),
+                        'coverage': (ACSPublicCoverage, acs.ACSPublicCoverage_categories)}
+                
         self.x, self.y, self.g = self.preprocess(dataset_name, 
-                                                 one_hot=one_hot, 
-                                                 remove_sensitive=remove_sensitive, 
-                                                 exclude_sensitive=exclude_sensitive)
+                                                one_hot=one_hot, 
+                                                remove_sensitive=remove_sensitive, 
+                                                exclude_sensitive=exclude_sensitive)
         # saving clean versions of training data
         self.x_train_clean, _, self.y_train_clean, _, self.g_train_clean, _ = self.split_train_test()
+
 
 
     def preprocess(self, dataset_name, one_hot, remove_sensitive, exclude_sensitive=False):
         if dataset_name == 'compas': 
             return process_compas('datasets/compas-scores-two-years.csv')
-        elif dataset_name == 'income':
+        elif dataset_name in ['income', 'coverage', 'employment']: 
+            
             data_source = ACSDataSource(survey_year='2018', horizon='1-Year', survey='person')
             data = data_source.get_data(states=["LA"], download=True)
+            
+            data_f, data_encoding = self.acs_dict[dataset_name]
             if one_hot:
                 # use one hot encoding for categorical variables
-                x, y, _ = ACSIncome.df_to_pandas(data, categories=acs.ACSIncome_categories, dummies=True)
+                x, y, _ = data_f.df_to_pandas(data, categories=data_encoding, dummies=True)
                 if exclude_sensitive: 
                     # remove sensitive attributes from features and labels 
                     for key in exclude_sensitive:
-                        print("removing: ", key)
-                        # exclude small subgroups
-                        # note that all excluded subgroups become 0 vectors
-                        x = x.drop(key, axis=1)
+                        if key in x.keys():
+                            print("removing: ", key)
+                            x = x.drop(key, axis=1)
                     
                 sensitive_attr_keys = [key for key in x.keys() if key.startswith("RAC1P") or key.startswith("SEX")]
                 s = x[sensitive_attr_keys]
                 
-                if remove_sensitive: 
+                if remove_sensitive:
                     # remove sensitive attributes from features 
                     x = x.drop(sensitive_attr_keys, axis=1)
 
@@ -50,12 +57,12 @@ class Dataset:
                 # save labels
                 self.x_labels = x.keys()
                 self.s_labels = sensitive_attr_keys
-
+                print(f"{dataset_name} x shape: {x.shape}")
                 # convert back to numpy 
                 return x.values, y.values, s.values
                 
             else: 
-                x, y, g = ACSIncome.df_to_numpy(data)
+                x, y, g = data_f.df_to_numpy(data)
                 if remove_sensitive: 
                     # remove race and gender from features 
                     x = np.delete(x, [-2, -1], axis=1)
@@ -66,42 +73,9 @@ class Dataset:
                 s = np.vstack((gender, race)).T
                 
                 # save labels 
-                self.x_labels = ACSIncome.features() if not remove_sensitive else ACSIncome.features()[:-2]
-                self.s_labels = ACSIncome.features()[-2: ] 
+                self.x_labels = data_f.features() if not remove_sensitive else data_f.features()[:-2]
+                self.s_labels = data_f.features()[-2: ] 
                 return x, y, s
-        elif dataset_name == 'coverage': 
-            # load ACSPublicCoverage
-            #  Predict whether a low-income individual, not eligible for Medicare, has coverage from public health insurance.
-            data_source = ACSDataSource(survey_year='2018', horizon='1-Year', survey='person')
-            data = data_source.get_data(states=["LA"], download=True)
-            if one_hot:
-                # use one hot encoding for categorical variables
-                x, y, _ = ACSPublicCoverage.df_to_pandas(data, categories=acs.ACSPublicCoverage_categories, dummies=True)
-                if exclude_sensitive: 
-                    # remove sensitive attributes from features and labels 
-                    for key in exclude_sensitive:
-
-                        # exclude small subgroups
-                        # note that all excluded subgroups become 0 vectors
-                        if key in x.keys():
-                            print("removing: ", key)
-                            x = x.drop(key, axis=1)
-                    
-                sensitive_attr_keys = [key for key in x.keys() if key.startswith("RAC1P") or key.startswith("SEX")]
-                s = x[sensitive_attr_keys]
-                
-                if remove_sensitive: 
-                    # remove sensitive attributes from features 
-                    x = x.drop(sensitive_attr_keys, axis=1)
-
-                    
-                # save labels
-                self.x_labels = x.keys()
-                self.s_labels = sensitive_attr_keys
-
-                # convert back to numpy 
-                return x.values, y.values, s.values
-            
         else: 
             raise ValueError("Dataset name not recognized")
             
