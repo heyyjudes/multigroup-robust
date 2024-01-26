@@ -47,7 +47,6 @@ def run_y_shift(ds_str, target_group, num_runs, alpha):
             
             
         results.to_csv(f"results/{ds_str}_label_shift_hot{target}{1-target}_g{target_group}_postprocess.csv")
-    
 
 def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha): 
     
