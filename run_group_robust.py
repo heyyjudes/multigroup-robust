@@ -1,3 +1,6 @@
+import os
+os.environ['OMP_NUM_THREADS'] = "16"
+
 import numpy as np
 import argparse
 import pandas as pd
