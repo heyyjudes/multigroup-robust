@@ -36,7 +36,6 @@ def run_y_shift(ds_str, target_group, num_runs, alpha):
     target = 0
     for i in range(num_runs): 
         for noise_rate in [0, 0.1, 0.2, 0.5, 0.7]: 
-            adult.restore_training()
             adult.group_label_shift(group=group, 
                                     noise_rate=noise_rate, 
                                     random_state=i, 
@@ -45,7 +44,8 @@ def run_y_shift(ds_str, target_group, num_runs, alpha):
                                                                             noise_rate=noise_rate, 
                                                                             run=i, 
                                                                             alpha=alpha, 
-                                                                            max_T = 20)])
+                                                                            max_T = 20,
+                                                                            poison = True)])
             
             
             

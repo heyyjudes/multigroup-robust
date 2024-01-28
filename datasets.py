@@ -22,10 +22,8 @@ class Dataset:
                                                 one_hot=one_hot, 
                                                 remove_sensitive=remove_sensitive, 
                                                 exclude_sensitive=exclude_sensitive)
-        # saving clean versions of training data
-        self.x_train_clean, _, self.y_train_clean, _, self.g_train_clean, _ = self.split_train_test()
 
-
+        self.split_train_test() 
 
     def preprocess(self, dataset_name, one_hot, remove_sensitive, exclude_sensitive=False):
         if dataset_name == 'compas': 
@@ -49,14 +47,17 @@ class Dataset:
                 sensitive_attr_keys = [key for key in x.keys() if key.startswith("RAC1P") or key.startswith("SEX")]
                 s = x[sensitive_attr_keys]
                 
-                if remove_sensitive:
-                    # remove sensitive attributes from features 
-                    x = x.drop(sensitive_attr_keys, axis=1)
-
+                # remove sensitive attributes from features 
+                x = x.drop(sensitive_attr_keys, axis=1)
+                
+                # reorder sensitive attributes
+                if not remove_sensitive:
+                    # concatenate so sensitive attributes is at the end
+                    x = pd.concat((x, s), axis=1)
                     
                 # save labels
                 self.x_labels = x.keys()
-                self.s_labels = sensitive_attr_keys
+                self.s_labels = s.keys()
                 print(f"{dataset_name} x shape: {x.shape}")
                 # convert back to numpy 
                 return x.values, y.values, s.values
@@ -87,7 +88,7 @@ class Dataset:
         self.x_valid, self.x_test, self.y_valid, self.y_test, self.g_valid, self.g_test = \
             train_test_split(self.x_test, self.y_test, self.g_test, test_size=0.5, random_state=random_state)
         
-        return self.x_train, self.x_test, self.y_train, self.y_test, self.g_train, self.g_test
+        return 
     
     
     def group_label_flip(self, group, group_ind=1, noise_rate=0.2, random_state=0):
@@ -187,13 +188,23 @@ class Dataset:
         else:
             idx = np.where((self.g_train == group).all(axis=1))[0]
         
-        idx2 = np.where(self.y_train == target)[0]
-        idx = np.intersect1d(idx, idx2)
+        if target != "*": 
+            # if specific target is specified, intersect with target
+            idx2 = np.where(self.y_train == target)[0]
+            idx = np.intersect1d(idx, idx2)
 
-        # flip move noise of zero labels in group g to 1
+        # flip label based on target and group 
         to_flip = rng.choice(idx, int(len(idx) * noise_rate), replace=False)
-        self.y_train[to_flip] = 1 - target
         
+        # create poison examples
+        self.x_poison = self.x_train[:]
+        self.y_poison = self.y_train[:]
+        self.g_poison = self.g_train[:]
+        if target in [0, 1]: 
+            assert (self.y_poison[to_flip] == target).all() 
+        
+        self.y_poison[to_flip] = 1 - self.y_poison[to_flip]
+        return 
             
     def group_label_shift_dense(self, group, group_ind=1, noise_rate=0.2, random_state=0, target=0):
         # Safety checks
@@ -215,13 +226,22 @@ class Dataset:
 
         # flip move noise of zero labels in group g to 1
         to_flip = rng.choice(idx, int(len(idx) * noise_rate), replace=False)
-        self.y_train[to_flip] = 1 - target
+        
+        # create poison examples
+        self.x_poison = self.x_train[:]
+        self.y_poison = self.y_train[:]
+        self.g_poison = self.g_train[:]
+        if target in [0, 1]: 
+            assert (self.y_poison[to_flip] == target).all() 
+        
+        self.y_poison[to_flip] = 1 - self.y_poison[to_flip]
+        return 
 
-    def restore_training(self): 
-        '''Restore training data to clean version'''
-        self.x_train = self.x_train_clean.copy()
-        self.y_train = self.y_train_clean.copy()
-        self.g_train = self.g_train_clean.copy()
+    # def restore_training(self): 
+    #     '''Restore training data to clean version'''
+    #     self.x_train = self.x_train_clean.copy()
+    #     self.y_train = self.y_train_clean.copy()
+    #     self.g_train = self.g_train_clean.copy()
 
 
 def process_compas(data_path): 

@@ -86,7 +86,7 @@ def train_and_test_onehot(dataset, noise_rate, run=0):
     return pd.DataFrame(results)
 
 
-def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=20, poison=False):
+def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=20, poison=False, model=None):
     
     results = [] 
     
@@ -114,8 +114,13 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
     results_dict["noise"] = noise_rate
     results_dict["run"] = run
     results.append(results_dict)
-        
-    for model in ["LR", "XGB", "KNN", "DT", "NN"]: 
+    
+    if model == None: 
+        model_arr = ["LR", "XGB", "KNN", "DT", "NN"]
+    else: 
+        assert type(model) == list 
+        model_arr = model
+    for model in model_arr:  
         clf = md.model_choice(model, xtrain=x_train, ytrain=y_train.ravel())
         clf.fit(x_train, y_train.ravel())
 
@@ -127,7 +132,7 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
         results_dict["run"] = run
         results.append(results_dict)
 
-        # post process on validation data
+        # post process on training data
         ma_clf = md.MAEmp(clf)
         ma_clf = md.multi_accuracy_boost_emp_onehot(f_0=ma_clf, 
                                                         alpha=alpha,

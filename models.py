@@ -242,7 +242,7 @@ class MAEmp(BoostingClassifier):
             s_len = len(self.coeff_arr[i])
             
             # only compare the last s_len columns of X 
-            # TODO: this will not work for permuted sensitive attributes
+            # made sure sensitive attributes is at the end in preprocess function 
             # z : {x}^n -> [0, 1]^n
             z = (X[:, -s_len:] == self.coeff_arr[i]).all(axis=1)
             #print(f"positive updates {(z > 0).sum()}")
@@ -325,7 +325,6 @@ def multi_accuracy_boost_emp_onehot(f_0, alpha, x_valid, y_valid, g_valid, max_T
                 # sanity check # 2
                 # residual = f.predict_proba_1d(x_valid) - y_valid.flatten() 
                 # print(f"residual after {residual[C].sum():0.2e}")
-                # print(f"iteration{t}, violation found {violation:0.2e}")
                 break 
             # else: 
             #     print(f"MA OK for {unique_groups[perm][i]} group {violation:0.2e}")
