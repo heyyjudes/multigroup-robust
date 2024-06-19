@@ -1,4 +1,4 @@
-
+import copy
 import numpy as np
 import pandas as pd
 
@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, roc_curve
 # local methods
 import datasets as ds
 import models as md
+import pdb
 
 race_encoding =  {
         1.0: "white",
@@ -17,8 +18,7 @@ race_encoding =  {
 
 # train a logistic variety of models and evaluate it on the test set
 def train_and_test(dataset, noise_rate, run=0, metric=None):
-    results = [] 
-    #for model in ["LR", "XGB", "KNN"]: 
+    results = []
     for model in ["LR", "XGB", "MAE"]:
         if clf == "MAE": 
             clf = md.MAEmp()
@@ -61,25 +61,43 @@ def train_and_test(dataset, noise_rate, run=0, metric=None):
         results.append(results_dict)
     return pd.DataFrame(results)
 
-def train_and_test_onehot(dataset, noise_rate, run=0):
+def train_and_test_onehot(dataset, noise_rate, run=0, sanitize=False, poison=False, model=None):
     results = [] 
-    for model in ["LR", "XGB", "MAEmp"]:
-        if model == "MAE": 
-            clf = md.MAEmp()
-            clf = md.multi_accuracy_boost_emp_onehot(f_0=clf, 
-                                                        alpha=1e-3,
-                                                        x_valid=dataset.x_train, 
-                                                        y_valid=dataset.y_train, 
-                                                        g_valid=dataset.g_train, 
-                                                        max_T=20)
+    # select data
+    if poison: 
+        x_train = dataset.x_poison
+        y_train = dataset.y_poison
+        g_train = dataset.g_poison
+    else: 
+        x_train = dataset.x_train
+        y_train = dataset.y_train
+        g_train = dataset.g_train
+        
+    if sanitize:
+        if not poison: 
+            print("WARNING: Sanitizing training data without poisoning")
+        y_train = copy.deepcopy(md.data_sanitation_knn(x_train, y_train, k=5, num_iter=1).ravel())
+    else: 
+        y_train = y_train.ravel()
             
+            
+    if model == None: 
+        model_arr = ["LR", "XGB", "KNN", "DT", "NN"]
+    else: 
+        if type(model) == list: 
+            model_arr = model 
         else: 
-            clf = md.model_choice(model, xtrain=dataset.x_train, ytrain=dataset.y_train)
-            clf.fit(dataset.x_train, dataset.y_train.ravel())
+            model_arr = [model]
+    
+    
+    for model in model_arr:
+
+        clf = md.model_choice(model, xtrain=x_train, ytrain=y_train)
+        clf.fit(x_train, y_train)
 
         results_dict = eval_all_metrics(dataset, clf)
 
-        results_dict["model"] = model 
+        results_dict["model"] = "-".join([model, "San"]) if sanitize else model
         results_dict["noise"] = noise_rate
         results_dict["run"] = run
         results.append(results_dict)
@@ -99,6 +117,7 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
         y_train = dataset.y_train
         g_train = dataset.g_train
     # MA boost from scratch
+    print("MAEmp")
     ma_clf = md.MAEmp()
     ma_clf = md.multi_accuracy_boost_emp_onehot(f_0=ma_clf, 
                                                     alpha=alpha,
@@ -108,7 +127,7 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
                                                     max_T=max_T)
 
     # report all three if no metric specified 
-    results_dict = eval_all_metrics(dataset, ma_clf)
+    results_dict = eval_all_metrics(dataset, ma_clf, single_attr=dataset.single_attr)
 
     results_dict["model"] = "MAEmp"
     results_dict["noise"] = noise_rate
@@ -118,20 +137,22 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
     if model == None: 
         model_arr = ["LR", "XGB", "KNN", "DT", "NN"]
     else: 
-        assert type(model) == list 
-        model_arr = model
+        if type(model) == list: 
+            model_arr = model
+        else: 
+            model_arr = [model]
     for model in model_arr:  
         clf = md.model_choice(model, xtrain=x_train, ytrain=y_train.ravel())
         clf.fit(x_train, y_train.ravel())
 
         # report all three if no metric specified 
-        results_dict = eval_all_metrics(dataset, clf)
-
+        results_dict = eval_all_metrics(dataset, clf, single_attr=dataset.single_attr)
+        print(model)
         results_dict["model"] = model 
         results_dict["noise"] = noise_rate
         results_dict["run"] = run
         results.append(results_dict)
-
+        print("post processed")
         # post process on training data
         ma_clf = md.MAEmp(clf)
         ma_clf = md.multi_accuracy_boost_emp_onehot(f_0=ma_clf, 
@@ -142,7 +163,7 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
                                                         max_T=max_T)
         
         # report all three if no metric specified 
-        results_dict = eval_all_metrics(dataset, ma_clf)
+        results_dict = eval_all_metrics(dataset, ma_clf, single_attr=dataset.single_attr)
 
         results_dict["model"] = "-".join([model, "PP"])
         results_dict["noise"] = noise_rate
@@ -151,7 +172,7 @@ def train_postprocess_test_onehot(dataset, noise_rate, run=0, alpha=1e-4, max_T=
         
     return pd.DataFrame(results)
 
-def eval_all_metrics(dataset, clf): 
+def eval_all_metrics(dataset, clf, single_attr=False): 
     results_dict = {}
     
     # pick threshold based on validation set
@@ -162,15 +183,18 @@ def eval_all_metrics(dataset, clf):
     acc_dict = accuracy_allgroups_onehot(dataset.y_test,
                     pred, 
                     dataset.g_test, 
-                    dataset.s_labels)
+                    dataset.s_labels, 
+                    single_attr=single_attr)
     auc_dict = auc_allgroups_onehot(dataset.y_test,
                     clf.predict_proba(dataset.x_test)[:, 1], 
                     dataset.g_test, 
-                    dataset.s_labels)
+                    dataset.s_labels, 
+                    single_attr=single_attr)
     ma_dict = ma_allgroups_onehot(dataset.y_test,
                     clf.predict_proba(dataset.x_test)[:, 1], 
                     dataset.g_test, 
-                    dataset.s_labels)
+                    dataset.s_labels, 
+                    single_attr=single_attr)
     for suffix, _dict in zip(["_acc", "_auc", "_ma"], [acc_dict, auc_dict, ma_dict]):
         for key in _dict.keys():
             results_dict[key + suffix] = _dict[key]
@@ -288,7 +312,7 @@ def check_ma_violation(target, pred, group_arr, group_labels, alpha):
             
     
     
-def ma_allgroups_onehot(target, pred, group_arr, group_labels): 
+def ma_allgroups_onehot(target, pred, group_arr, group_labels, single_attr=False): 
     ma_dict = {} 
     # ensure target and pred are correct dim
     if target.shape != pred.shape: 
@@ -299,6 +323,7 @@ def ma_allgroups_onehot(target, pred, group_arr, group_labels):
     unique_groups = np.unique(group_arr.astype(int), axis=0)
     residual = pred.flatten() - target.astype(int).flatten()
     for g in unique_groups: 
+
         C = (group_arr == g).all(axis=1)
         g_ma = np.sum(residual[C])/len(group_arr)
 
@@ -306,16 +331,19 @@ def ma_allgroups_onehot(target, pred, group_arr, group_labels):
         ind = np.where(g == 1)[0]
         subgroup_label = "_".join([group_labels[i] for i in ind])
         ma_dict[subgroup_label] = g_ma
+        
     # single attribute groups: 
-    for i in range(len(group_labels)): 
-        # find all individuals in over arching group
-        g_ma = np.sum(residual[C])/len(group_arr)
-        ma_dict[group_labels[i]] = g_ma
+    if not single_attr:
+        for i in range(len(group_labels)): 
+            # find all individuals in over arching group
+            C = group_arr[:, i] == 1
+            g_ma = np.sum(residual[C])/len(group_arr)
+            ma_dict[group_labels[i]] = g_ma
         
     # over arching groups
     return ma_dict
 
-def accuracy_allgroups_onehot(target, pred, group_arr, group_labels): 
+def accuracy_allgroups_onehot(target, pred, group_arr, group_labels, single_attr=False): 
     '''
     check accuracy for all subgroups when group membership is one-hot encoded
     this will only check for single attribute groups (i.e. whether a single property is True)
@@ -339,16 +367,17 @@ def accuracy_allgroups_onehot(target, pred, group_arr, group_labels):
         acc_dict[subgroup_label] = acc
         
     # single attribute groups: 
-    for i in range(len(group_labels)): 
-        # find all individuals in over arching group
-        C = group_arr[:, i] == 1
-        acc = np.mean((target == pred)[C])
-        acc_dict[group_labels[i]] = acc
+    if not single_attr:
+        for i in range(len(group_labels)): 
+            # find all individuals in over arching group
+            C = group_arr[:, i] == 1
+            acc = np.mean((target == pred)[C])
+            acc_dict[group_labels[i]] = acc
         
     acc_dict["all"] =  np.mean((target == pred))
     return acc_dict
 
-def auc_allgroups_onehot(target, pred, group_arr, group_labels): 
+def auc_allgroups_onehot(target, pred, group_arr, group_labels, single_attr=False): 
     '''
     check auc for all subgroups when group membership is one-hot encoded
     this will only check for single attribute groups (i.e. whether a single property is True)
@@ -374,11 +403,12 @@ def auc_allgroups_onehot(target, pred, group_arr, group_labels):
         auc_dict[subgroup_label] = auc
         
     # single attribute groups: 
-    for i in range(len(group_labels)): 
-        # find all individuals in over arching group
-        C = group_arr[:, i] == 1
-        auc = roc_auc_score(target[C], pred[C])
-        auc_dict[group_labels[i]] = auc
+    if not single_attr:
+        for i in range(len(group_labels)): 
+            # find all individuals in over arching group
+            C = group_arr[:, i] == 1
+            auc = roc_auc_score(target[C], pred[C])
+            auc_dict[group_labels[i]] = auc
         
     auc_dict["all"] = roc_auc_score(target, pred)
     return auc_dict

@@ -12,51 +12,51 @@ from sklearn import metrics, cluster
 import datasets as ds
 import models as md
 import metrics as mt
+import pdb
 
-exclude_attr_list = ['RAC1P_Native Hawaiian and Other Pacific Islander alone', 
-                     'RAC1P_American Indian alone', 
-                     'RAC1P_Alaska Native alone', 
-                     'RAC1P_Some Other Race alone', 
-                     'RAC1P_Two or More Races', 
-                     'RAC1P_American Indian or Alaska Native, not specified',]
-
-subgroups_dict = {"white-male": [0, 1, 0, 0, 1], 
-                  "white-female": [1, 0, 0, 0, 1], 
-                  "black-male": [0, 1, 1, 0, 0],
-                  "black-female": [1, 0, 1, 0, 0],
-                  "asian-male": [0, 1, 0, 1, 0],
-                  "asia-female": [1, 0, 0, 1, 0]}
-
-
-def run_y_shift(ds_str, target_group, num_runs, alpha): 
-    adult = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False, exclude_sensitive=exclude_attr_list)
-    dataset = adult
+def run_y_shift(ds_str, target_group, num_runs, alpha, sanitize=False, model=None): 
+    dataset = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False)
     results = pd.DataFrame() 
-    group=subgroups_dict[target_group]
-    target = 0
+    if target_group not in dataset.subgroups_dict.keys():
+        raise ValueError(f"target group {target_group} not in dataset {ds_str} please choose: {dataset.subgroups_dict.keys()}")
+    group=dataset.subgroups_dict[target_group]
+    
+    target = 1 if ds_str == 'lawschool' else 0
     for i in range(num_runs): 
-        for noise_rate in [0, 0.1, 0.2, 0.5, 0.7]: 
-            adult.group_label_shift(group=group, 
+        for noise_rate in [0.0, 0.1, 0.2, 0.5, 0.7]: 
+            dataset.group_label_shift(group=group, 
                                     noise_rate=noise_rate, 
                                     random_state=i, 
                                     target=target)
-            results = pd.concat([results, mt.train_postprocess_test_onehot(dataset=adult, 
-                                                                            noise_rate=noise_rate, 
-                                                                            run=i, 
-                                                                            alpha=alpha, 
-                                                                            max_T = 20,
-                                                                            poison = True)])
-            
-            
-            
-        results.to_csv(f"results/{ds_str}_label_shift_hot{target}{1-target}_g{target_group}_postprocess.csv")
+            if sanitize: 
+                results = pd.concat([results, mt.train_and_test_onehot(dataset=dataset,
+                                                                        model=model,
+                                                                        noise_rate=noise_rate,
+                                                                        run=i,
+                                                                        sanitize=sanitize,
+                                                                        poison=True)])   
+            else:
+                results = pd.concat([results, mt.train_postprocess_test_onehot(dataset=dataset, 
+                                                                                noise_rate=noise_rate, 
+                                                                                run=i, 
+                                                                                alpha=alpha, 
+                                                                                max_T = 20,
+                                                                                model = model,
+                                                                                poison = True)])
+        if model: 
+            model_str = f"_{model}"
+        else: 
+            model_str = ""
+        if sanitize: 
+            results.to_csv(f"results/sanitize/{ds_str}_label_shift_hot{target}{1-target}_g{target_group}_sanitize{model_str}.csv")
+        else: 
+            results.to_csv(f"results/{ds_str}_label_shift_hot{target}{1-target}_g{target_group}_postprocess{model_str}.csv")
 
-def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha): 
+def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha, sanitize=False, model=None): 
     
     results = pd.DataFrame() 
     for n in range(num_runs):
-        adult = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False, exclude_sensitive=exclude_attr_list)
-        dataset = adult
+        dataset = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False)
     
         # groups are now string and not vectors 
         km = cluster.KMeans(n_clusters=100)
@@ -66,17 +66,31 @@ def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha):
         cl_inds, cl_cts = np.unique(km.labels_, return_counts=True)
 
         # translate group str
-        md_group = subgroups_dict[modify_group]
-        tgt_group = subgroups_dict[target_group]
+        if target_group not in dataset.subgroups_dict.keys():
+            raise ValueError(f"target group {target_group} not in dataset {ds_str} please choose: {dataset.subgroups_dict.keys()}")
+        tgt_group = dataset.subgroups_dict[target_group]
+        
+        if modify_group not in dataset.subgroups_dict.keys():
+            raise ValueError(f"modify group {modify_group} not in dataset {ds_str} please choose: {dataset.subgroups_dict.keys()}")
+
+        md_group = dataset.subgroups_dict[modify_group]
+
     
         # first check clean performance
-        clean_results = mt.train_postprocess_test_onehot(dataset=adult, 
+        if sanitize: 
+            clean_results = mt.train_and_test_onehot(dataset=dataset,
+                                                    model=model,
+                                                    noise_rate=0,
+                                                    run=n,
+                                                    sanitize=sanitize)
+        else: 
+            clean_results = mt.train_postprocess_test_onehot(dataset=dataset, 
                                                 noise_rate=0, 
                                                 run=n, 
                                                 alpha=alpha, 
-                                                max_T = 30)
+                                                max_T = 30, 
+                                                model= model)
         results = pd.concat((results, clean_results), axis=0)
-        
         for eps in [1, 2, 4, 8]: 
             x_poison = []
             y_poison = []
@@ -102,7 +116,11 @@ def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha):
 
                         x_p = dataset.x_valid[aux_subclass][modify_ct]
                         # shift
-                        y_p = dataset.y_valid[aux_subclass][modify_ct] * 0 + 1
+                        if ds_str == 'lawschool':
+                            # add negative label examples since 1 is majority class in lawschool
+                            y_p = dataset.y_valid[aux_subclass][modify_ct] * 0
+                        else: 
+                            y_p = dataset.y_valid[aux_subclass][modify_ct] * 0 + 1
 
                         # flip
                         # flip doesn't really work
@@ -128,17 +146,34 @@ def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha):
                 (dataset.g_train, np.concatenate(g_poison, axis=0)), axis=0
             )
             
-            print(f"adding {len(x_poison)} datapoints for a total size of {len(dataset.x_poison)}")    
-            poison_results = mt.train_postprocess_test_onehot(dataset=adult, 
-                                                noise_rate=eps, 
-                                                run=n, 
-                                                alpha=alpha, 
-                                                max_T = 30, 
-                                                poison=True)
+            print(f"adding {len(x_poison)} datapoints for a total size of {len(dataset.x_poison)}") 
             
+            if sanitize: 
+                poison_results = mt.train_and_test_onehot(dataset=dataset,
+                                                                        model=model,
+                                                                        noise_rate=eps,
+                                                                        run=n,
+                                                                        sanitize=sanitize,
+                                                                        poison=True)  
+            else:
+                poison_results = mt.train_postprocess_test_onehot(dataset=dataset, 
+                                                                                noise_rate=eps, 
+                                                                                run=n, 
+                                                                                alpha=alpha, 
+                                                                                max_T = 30,
+                                                                                model = model,
+                                                                                poison = True)
             results = pd.concat((results, poison_results), axis=0)
+        print(f"finished run {n}, saving results")
         
-            results.to_csv(f"results/{ds_str}_addition_attack_t{target_group}_m{modify_group}.csv")
+    if model: 
+        model_str = f"_{model}"
+    else: 
+        model_str = ""
+    if sanitize:
+        results.to_csv(f"results/sanitize/{ds_str}_addition_attack_t{target_group}_m{modify_group}_sanitize{model_str}.csv")
+    else: 
+        results.to_csv(f"results/{ds_str}_addition_attack_t{target_group}_m{modify_group}{model_str}.csv")
     
 if __name__ == "__main__": 
     # parse command line arguments
@@ -149,9 +184,11 @@ if __name__ == "__main__":
     parser.add_argument("--target", type=str, default='white-female', help="group to modify")
     parser.add_argument("--shift", action="store_true", default=False, help="label shift for modify group")
     parser.add_argument("--addition", action="store_true", default=False, help="data poisoning for modify group")
+    parser.add_argument("--model", type=str, default="all", help="model to use")
     
     parser.add_argument("--num_runs", type=int, default=5, help="number of runs")
     parser.add_argument("--alpha", type=float, default=1e-5, help="error allowance")
+    parser.add_argument("--sanitize", action="store_true", default=False, help="sanitize the data")
     
     # add dataset selection
     parser.add_argument("--dataset", type=str, default="income", help="dataset to use")
@@ -159,8 +196,22 @@ if __name__ == "__main__":
     # Parse the arguments
     args = parser.parse_args()
     
+    # will run for all models if not specified
+    model = None if args.model == "all" else args.model
+        
     if args.shift: 
-        run_y_shift(args.dataset, args.modify, args.num_runs, args.alpha)
+        run_y_shift(ds_str=args.dataset, 
+                    target_group=args.modify,
+                    num_runs =args.num_runs, 
+                    alpha=args.alpha,
+                    model=model,
+                    sanitize=args.sanitize)
         
     if args.addition:
-        run_poison_addition(args.dataset, args.modify, args.target, args.num_runs, args.alpha)
+        run_poison_addition(ds_str=args.dataset,
+                            modify_group=args.modify,
+                            target_group=args.target,
+                            num_runs=args.num_runs,
+                            model=model,
+                            alpha=args.alpha, 
+                            sanitize=args.sanitize)

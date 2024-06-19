@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+import cvxpy as cp
 
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.svm import LinearSVC, SVC
@@ -21,6 +22,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.utils._testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 import warnings
+
+import pdb
 
 clf_dict = {
     "LR": LogisticRegression,
@@ -93,6 +96,11 @@ def model_choice(clf, xtrain=None, ytrain=None, scaling=True):
                         learning_rate=grid_search.best_params_["mlp__learning_rate"],
                     )))
         
+    elif clf == "DT":
+        model.steps.append(("DT", DecisionTreeClassifier(max_depth=10)))
+        
+    elif clf == "RLR": 
+        model = RobustLogRegression()
     else:
         model.steps.append(("clf", clf_dict[clf]()))
     return model
@@ -111,6 +119,44 @@ class BoostingClassifier:
     def predict_proba(self, X): 
         return np.vstack([1 - self.predict_proba_1d(X), self.predict_proba_1d(X)]).T
         
+
+class RobustLogRegression:
+    def __init__(self):
+        self.beta = None
+        self.scaler = StandardScaler()
+    
+    def fit(self, x, y):
+        n = len(y)
+        p = x.shape[1]
+        x_fit = self.scaler.fit_transform(x)
+        v = cp.Variable()
+        eta = cp.Variable(len(y))
+        beta = cp.Variable(p)
+        constr = []
+        constr += [cp.multiply(y, (x_fit @ beta)) + eta + v >= 0]
+        constr += [v >= 0]
+        constr += [eta >= 0]
+        constr += [cp.norm(beta, 2) <= 1]
+        obj = -v * n - cp.sum(eta)
+        prob = cp.Problem(cp.Maximize(obj), constr)
+        prob.solve()
+        self.beta = beta.value
+        return beta.value
+
+    def predict(self, x, thresh):
+        x = self.scaler.transform(x)
+        return predict_proba(x) > thresh
+    
+    def predict_proba(self, x):
+        x = self.scaler.transform(x)
+        pos_class = 1/(1 + np.exp(-x @ self.beta))
+        neg_class = 1 - pos_class
+        return np.vstack([neg_class, pos_class]).T
+    
+    def pred_prob1d(self, x):
+        x = self.scaler.transform(x)
+        return 1/(1 + np.exp(-x @ self.beta))
+
 
 class MABoost(BoostingClassifier):
     def __init__(self, base_clf, coeff_arr=None, intercept_arr=None, eta=0.1):
@@ -220,7 +266,6 @@ def multi_accuracy_boost(f_0, A, alpha, x_valid, y_valid, g_valid, max_T):
 class MAEmp(BoostingClassifier):
     def __init__(self, base_clf=None, coeff_arr=None, intercept_arr=None, eta=0.1):
         super().__init__(base_clf, coeff_arr, intercept_arr, eta)
-        self.v_c = [] 
         
     def predict_proba_1d(self, X):
         '''
@@ -240,7 +285,6 @@ class MAEmp(BoostingClassifier):
         for i in range(len(self.coeff_arr)):
             # select x \ in C via coeff mask, subtract v_c 
             s_len = len(self.coeff_arr[i])
-            
             # only compare the last s_len columns of X 
             # made sure sensitive attributes is at the end in preprocess function 
             # z : {x}^n -> [0, 1]^n
@@ -314,6 +358,7 @@ def multi_accuracy_boost_emp_onehot(f_0, alpha, x_valid, y_valid, g_valid, max_T
             # print(np.sum(residual[C]))
             # bias = 1/n * |sum_{i=1}^n p(x_i) - y_i1(x_i \in C)|
             violation = np.abs(np.sum(residual[C])/len(x_valid))
+            # print(unique_groups[perm][i], violation)
             if violation > alpha: 
                 # v_c = 1/C * sum_{i=1}^n p(x_i) - y_i1(x_i \in C)
                 v_c = np.sum(residual[C])/np.sum(C) 
@@ -384,3 +429,28 @@ def multi_accuracy_boost_emp_dense(f_0, A, alpha, x_valid, y_valid, g_valid, max
             print(f"iteration{t}, no violation found")
             break
     return f
+
+
+def data_sanitation_knn(x_train, y_train, k=10, num_iter=1): 
+    """
+    x_train: features
+    y_train: labels
+    k: number of neighbors to consider
+    Label Sanitization against Label Flipping
+    Poisoning Attacks
+    https://arxiv.org/pdf/1803.00992.pdf
+    """
+    # find nearest neighbors for each point in x_train
+    y_sanitized = copy.deepcopy(y_train)
+    for i in range(num_iter): 
+        knn = KNeighborsClassifier(n_neighbors=k)
+        knn.fit(x_train, y_train.ravel())
+        # dont actually need the distances
+        neighbors = knn.kneighbors(x_train, return_distance=False) # incides of neighbors
+        avg_label = np.mean(y_train[neighbors], axis=1)
+        pos_class_mask = avg_label >= 0.80
+        y_sanitized[pos_class_mask] = 1
+        neg_class_mask = avg_label <= 0.20
+        y_sanitized[neg_class_mask] = 0
+    print("Total sanitized", (y_sanitized != y_train).sum(), "out of", len(y_train), "samples")
+    return y_sanitized
