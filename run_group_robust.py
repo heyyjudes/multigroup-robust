@@ -1,18 +1,14 @@
 import os
-os.environ['OMP_NUM_THREADS'] = "16"
 
 import numpy as np
 import argparse
 import pandas as pd
 
-from sklearn.linear_model import Ridge 
-from sklearn import metrics, cluster
+from sklearn import cluster
 
 # local libs
 import datasets as ds
-import models as md
 import metrics as mt
-import pdb
 
 def run_y_shift(ds_str, target_group, num_runs, alpha, sanitize=False, model=None): 
     dataset = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False)
@@ -52,8 +48,8 @@ def run_y_shift(ds_str, target_group, num_runs, alpha, sanitize=False, model=Non
         else: 
             results.to_csv(f"results/{ds_str}_label_shift_hot{target}{1-target}_g{target_group}_postprocess{model_str}.csv")
 
-def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha, sanitize=False, model=None): 
-    
+
+def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha, sanitize=False, model=None):
     results = pd.DataFrame() 
     for n in range(num_runs):
         dataset = ds.Dataset(ds_str, one_hot=True, remove_sensitive=False)
@@ -122,9 +118,6 @@ def run_poison_addition(ds_str, modify_group, target_group, num_runs, alpha, san
                         else: 
                             y_p = dataset.y_valid[aux_subclass][modify_ct] * 0 + 1
 
-                        # flip
-                        # flip doesn't really work
-                        # y_p = 1 - dataset.y_valid[aux_subclass][modify_ct]
                         g_p = dataset.g_valid[aux_subclass][modify_ct]
 
                         x_p = np.repeat(x_p, eps, axis=0)

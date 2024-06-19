@@ -7,7 +7,7 @@ Hu, Charlotte Peale, and Judy Hanwen Shen. This paper will appear at FORC 2024 a
 
 ## Algorithms
 We include a new implementation of empirical multiaccuracy boosting algorithm that works with any sklearn base classifier.
-The algorithm is implement in [models.py](models.py) and [subgroup_noise.ipynb](subgroup_noise.ipynb) gives examples 
+The algorithm is implement in [models.py](models.py) and [run_group_robust.py](run_group_robust.py) demonstrates how to use the algorithm. 
 how to use the algorithm. 
 
 ### Attacks 
@@ -40,11 +40,13 @@ We evaluate our algorithms on the following standard datasets:
 ### Quick Start
 To run the baselines and boosting algorithm on the income dataset with the label flipping on the white male group: 
 ```
-python run_group_robust --dataset=income --shift --modify='white-male' --num_runs=5
+mkdir results
+python run_group_robust.py --dataset=income --shift --modify='white-male' --num_runs=5
 ```
 
 To run the baselines and boosting algorithm on the income dataset with label sanitization under the addition attack by modifying the white male group and targeting the white female group: 
 
 ```
-python run_group_robust --dataset=income --addition --target='white-female' --modify="white-male" --num_runs=5 --target="white-female" --sanitize
+mkdir results/sanitize
+python run_group_robust.py --dataset=income --addition --target='white-female' --modify="white-male" --num_runs=5 --target="white-female" --sanitize
 ```
